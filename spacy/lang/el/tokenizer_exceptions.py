@@ -1,6 +1,6 @@
-from ..tokenizer_exceptions import BASE_EXCEPTIONS
-from ...symbols import ORTH, NORM
+from ...symbols import NORM, ORTH
 from ...util import update_exc
+from ..tokenizer_exceptions import BASE_EXCEPTIONS
 
 _exc = {}
 
@@ -128,7 +128,6 @@ _other_exc = {
 _exc.update(_other_exc)
 
 for h in range(1, 12 + 1):
-
     for period in ["π.μ.", "πμ"]:
         _exc[f"{h}{period}"] = [
             {ORTH: f"{h}"},

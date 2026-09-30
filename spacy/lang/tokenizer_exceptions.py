@@ -1,8 +1,7 @@
 import re
 
+from ..symbols import NORM, ORTH
 from .char_classes import ALPHA_LOWER
-from ..symbols import ORTH, NORM
-
 
 # URL validation regex courtesy of: https://mathiasbynens.be/demo/url-regex
 # and https://gist.github.com/dperini/729294 (Diego Perini, MIT License)
@@ -35,11 +34,11 @@ URL_PATTERN = (
     # host & domain names
     # mods: match is case-sensitive, so include [A-Z]
     r"(?:"  # noqa: E131
-      r"(?:"  # noqa: E131
-        r"[A-Za-z0-9\u00a1-\uffff]"  # noqa: E131
-        r"[A-Za-z0-9\u00a1-\uffff_-]{0,62}"
-      r")?"
-      r"[A-Za-z0-9\u00a1-\uffff]\."
+    r"(?:"  # noqa: E131
+    r"[A-Za-z0-9\u00a1-\uffff]"  # noqa: E131
+    r"[A-Za-z0-9\u00a1-\uffff_-]{0,62}"
+    r")?"
+    r"[A-Za-z0-9\u00a1-\uffff]\."
     r")+"
     # TLD identifier
     # mods: use ALPHA_LOWER instead of a wider range so that this doesn't match

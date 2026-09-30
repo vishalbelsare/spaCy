@@ -1,13 +1,21 @@
-from typing import Optional
-from pathlib import Path
-from wasabi import msg
-import typer
 import re
+from pathlib import Path
+from typing import Optional
 
-from ._util import app, Arg, Opt, parse_config_overrides, show_validation_error
-from ._util import import_code, setup_gpu
+import typer
+from wasabi import msg
+
 from ..training.pretrain import pretrain
 from ..util import load_config
+from ._util import (
+    Arg,
+    Opt,
+    app,
+    import_code,
+    parse_config_overrides,
+    setup_gpu,
+    show_validation_error,
+)
 
 
 @app.command(
@@ -17,12 +25,32 @@ from ..util import load_config
 def pretrain_cli(
     # fmt: off
     ctx: typer.Context,  # This is only used to read additional arguments
-    config_path: Path = Arg(..., help="Path to config file", exists=True, dir_okay=False, allow_dash=True),
+    config_path: Path = Arg(
+        ..., help="Path to config file", exists=True, dir_okay=False, allow_dash=True
+    ),
     output_dir: Path = Arg(..., help="Directory to write weights to on each epoch"),
-    code_path: Optional[Path] = Opt(None, "--code", "-c", help="Path to Python file with additional code (registered functions) to be imported"),
-    resume_path: Optional[Path] = Opt(None, "--resume-path", "-r", help="Path to pretrained weights from which to resume pretraining"),
-    epoch_resume: Optional[int] = Opt(None, "--epoch-resume", "-er", help="The epoch to resume counting from when using --resume-path. Prevents unintended overwriting of existing weight files."),
+    code_path: Optional[Path] = Opt(
+        None,
+        "--code",
+        "-c",
+        help="Path to Python file with additional code (registered functions) to be imported",
+    ),
+    resume_path: Optional[Path] = Opt(
+        None,
+        "--resume-path",
+        "-r",
+        help="Path to pretrained weights from which to resume pretraining",
+    ),
+    epoch_resume: Optional[int] = Opt(
+        None,
+        "--epoch-resume",
+        "-er",
+        help="The epoch to resume counting from when using --resume-path. Prevents unintended overwriting of existing weight files.",
+    ),
     use_gpu: int = Opt(-1, "--gpu-id", "-g", help="GPU ID or -1 for CPU"),
+    skip_last: bool = Opt(
+        False, "--skip-last", "-L", help="Skip saving model-last.bin"
+    ),
     # fmt: on
 ):
     """
@@ -61,7 +89,7 @@ def pretrain_cli(
         # TODO: What's the solution here? How do we handle optional blocks?
         msg.fail("The [pretraining] block in your config is empty", exits=1)
     if not output_dir.exists():
-        output_dir.mkdir()
+        output_dir.mkdir(parents=True)
         msg.good(f"Created output directory: {output_dir}")
     # Save non-interpolated config
     raw_config.to_disk(output_dir / "config.cfg")
@@ -74,6 +102,7 @@ def pretrain_cli(
         epoch_resume=epoch_resume,
         use_gpu=use_gpu,
         silent=False,
+        skip_last=skip_last,
     )
     msg.good("Successfully finished pretrain")
 

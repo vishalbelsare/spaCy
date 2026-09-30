@@ -1,17 +1,18 @@
-from typing import Optional, Sequence, Union, Iterator
-import tqdm
-from pathlib import Path
-import srsly
 import cProfile
+import itertools
 import pstats
 import sys
-import itertools
-from wasabi import msg, Printer
-import typer
+from pathlib import Path
+from typing import Iterator, Optional, Sequence, Union
 
-from ._util import app, debug_cli, Arg, Opt, NAME
+import srsly
+import tqdm
+import typer
+from wasabi import Printer, msg
+
 from ..language import Language
 from ..util import load_model
+from ._util import NAME, Arg, Opt, app, debug_cli
 
 
 @debug_cli.command("profile")
@@ -20,8 +21,15 @@ def profile_cli(
     # fmt: off
     ctx: typer.Context,  # This is only used to read current calling context
     model: str = Arg(..., help="Trained pipeline to load"),
-    inputs: Optional[Path] = Arg(None, help="Location of input file. '-' for stdin.", exists=True, allow_dash=True),
-    n_texts: int = Opt(10000, "--n-texts", "-n", help="Maximum number of texts to use if available"),
+    inputs: Optional[Path] = Arg(
+        None,
+        help="Location of input file. '-' for stdin.",
+        exists=True,
+        allow_dash=True,
+    ),
+    n_texts: int = Opt(
+        10000, "--n-texts", "-n", help="Maximum number of texts to use if available"
+    ),
     # fmt: on
 ):
     """
@@ -58,7 +66,7 @@ def profile(model: str, inputs: Optional[Path] = None, n_texts: int = 10000) -> 
 
         with msg.loading("Loading IMDB dataset via ml_datasets..."):
             imdb_train, _ = ml_datasets.imdb(train_limit=n_texts, dev_limit=0)
-            texts, _ = zip(*imdb_train)
+            texts = [text for text, _ in imdb_train]
         msg.info(f"Loaded IMDB dataset and using {n_texts} examples")
     with msg.loading(f"Loading pipeline '{model}'..."):
         nlp = load_model(model)
@@ -70,7 +78,7 @@ def profile(model: str, inputs: Optional[Path] = None, n_texts: int = 10000) -> 
 
 
 def parse_texts(nlp: Language, texts: Sequence[str]) -> None:
-    for doc in nlp.pipe(tqdm.tqdm(texts), batch_size=16):
+    for doc in nlp.pipe(tqdm.tqdm(texts, disable=None), batch_size=16):
         pass
 
 

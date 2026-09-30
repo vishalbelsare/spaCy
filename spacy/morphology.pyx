@@ -1,12 +1,14 @@
 # cython: infer_types
-import numpy
+# cython: profile=False
 import warnings
+
+import numpy
 
 from .attrs cimport POS
 
-from .parts_of_speech import IDS as POS_IDS
-from .errors import Warnings
 from . import symbols
+from .errors import Warnings
+from .parts_of_speech import IDS as POS_IDS
 
 
 cdef class Morphology:
@@ -50,21 +52,30 @@ cdef class Morphology:
         if not isinstance(features, dict):
             warnings.warn(Warnings.W100.format(feature=features))
             features = {}
+        # the hash key for the tag is either the hash of the normalized UFEATS
+        # string or the hash of an empty placeholder; look it up before
+        # allocating so that adding an existing analysis doesn't leak memory
+        norm_feats_string = self.normalize_features(features)
+        cdef hash_t tag_key = self.strings.add(norm_feats_string, allow_transient=False)
+        tag_ptr = <MorphAnalysisC*>self.tags.get(tag_key)
+        if tag_ptr != NULL:
+            return tag_ptr.key
         string_features = {self.strings.as_string(field): self.strings.as_string(values) for field, values in features.items()}
         # intified ("Field", "Field=Value") pairs
         field_feature_pairs = []
         for field in sorted(string_features):
             values = string_features[field]
+            self.strings.add(field, allow_transient=False),
+            field_id = self.strings[field]
             for value in values.split(self.VALUE_SEP):
+                field_sep_value = field + self.FIELD_SEP + value
+                self.strings.add(field_sep_value, allow_transient=False),
                 field_feature_pairs.append((
-                    self.strings.add(field),
-                    self.strings.add(field + self.FIELD_SEP + value),
+                    field_id,
+                    self.strings[field_sep_value]
                 ))
         cdef MorphAnalysisC tag = self.create_morph_tag(field_feature_pairs)
-        # the hash key for the tag is either the hash of the normalized UFEATS
-        # string or the hash of an empty placeholder
-        norm_feats_string = self.normalize_features(features)
-        tag.key = self.strings.add(norm_feats_string)
+        tag.key = tag_key
         self.insert(tag)
         return tag.key
 
@@ -82,10 +93,11 @@ cdef class Morphology:
         features = self.normalize_attrs(features)
         string_features = {self.strings.as_string(field): self.strings.as_string(values) for field, values in features.items()}
         # normalized UFEATS string with sorted fields and values
-        norm_feats_string = self.FEATURE_SEP.join(sorted([
-                self.FIELD_SEP.join([field, values])
-            for field, values in string_features.items()
-        ]))
+        norm_feats_string = self.FEATURE_SEP.join(
+            sorted(
+                [self.FIELD_SEP.join([field, values]) for field, values in string_features.items()]
+            )
+        )
         return norm_feats_string or self.EMPTY_MORPH
 
     def normalize_attrs(self, attrs):
@@ -190,6 +202,7 @@ cdef int get_n_by_field(attr_t* results, const MorphAnalysisC* morph, attr_t fie
             results[n_results] = morph.features[i]
             n_results += 1
     return n_results
+
 
 def unpickle_morphology(strings, tags):
     cdef Morphology morphology = Morphology(strings)

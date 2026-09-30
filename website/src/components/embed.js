@@ -1,11 +1,12 @@
 import React, { Fragment } from 'react'
 import PropTypes from 'prop-types'
 import classNames from 'classnames'
+import ImageNext from 'next/image'
 
 import Link from './link'
 import Button from './button'
-import { InlineCode } from './code'
-import { markdownToReact } from './util'
+import { InlineCode } from './inlineCode'
+import MarkdownToReact from './markdownToReactDynamic'
 
 import classes from '../styles/embed.module.sass'
 
@@ -57,18 +58,12 @@ SoundCloud.propTypes = {
     color: PropTypes.string,
 }
 
-function formatHTML(html) {
-    const encoded = encodeURIComponent(html)
-    return `<html><head><meta charset="UTF-8"></head><body>${encoded}</body></html>`
-}
-
-const Iframe = ({ title, src, html, width = 800, height = 300 }) => {
-    const source = html ? `data:text/html,${formatHTML(html)}` : src
+const Iframe = ({ title, src, width = 800, height = 300 }) => {
     return (
         <iframe
             className={classes.standalone}
             title={title}
-            src={source}
+            src={src}
             width={width}
             height={height}
             allowFullScreen
@@ -85,23 +80,107 @@ Iframe.propTypes = {
     height: PropTypes.number,
 }
 
-const Image = ({ src, alt, title, ...props }) => {
+// Raster images are served through the Netlify Image CDN, which resizes them to
+// the width they're actually displayed at and negotiates a modern format
+// (WebP/AVIF) based on the request's Accept header. SVGs are skipped: they're
+// tiny once Brotli-compressed and would only get rasterised. Animated GIFs are
+// skipped too, since the Image CDN passes them through unchanged.
+const OPTIMIZABLE_IMAGE = /\.(jpe?g|png)$/i
+
+const imageCdnUrl = (src, width) =>
+    `/.netlify/images?url=${encodeURIComponent(src)}&w=${width}&fit=contain`
+
+// Returns the `src`/`srcSet` pair for an image displayed at `width` CSS pixels.
+// Local rasters get a 1x/2x srcSet off the Image CDN; anything else (SVG, GIF,
+// remote or data URLs) is passed through untouched.
+const imageSourceProps = (src, width) => {
+    const isLocalRaster =
+        typeof src === 'string' && src.startsWith('/') && OPTIMIZABLE_IMAGE.test(src.split('?')[0])
+    if (!isLocalRaster || !width) return { src }
+    return {
+        src: imageCdnUrl(src, width),
+        srcSet: `${imageCdnUrl(src, width)} 1x, ${imageCdnUrl(src, width * 2)} 2x`,
+    }
+}
+
+const Image = ({ src, alt, title, href, ...props }) => {
     // This is only needed for image types that are NOT handled by
     // gatsby-remark-images, i.e. mostly SVGs. The plugin adds formatting
     // and support for captions, so this normalises that behaviour.
-    const linkClassNames = classNames('gatsby-resp-image-link', classes.imageLink)
+    const linkClassNames = classNames('gatsby-resp-image-link', classes['image-link'])
     const markdownComponents = { code: InlineCode, p: Fragment, a: Link }
     return (
         <figure className="gatsby-resp-image-figure">
-            <Link className={linkClassNames} href={src} hidden forceExternal>
-                <img className={classes.image} src={src} alt={alt} width={650} height="auto" />
-            </Link>
+            {href ? (
+                <Link className={linkClassNames} href={href} noLinkLayout forceExternal>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                        className={classes.image}
+                        {...imageSourceProps(src, 650)}
+                        alt={alt}
+                        width={650}
+                        height="auto"
+                        loading="lazy"
+                        decoding="async"
+                    />
+                </Link>
+            ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                    className={classes.image}
+                    {...imageSourceProps(src, 650)}
+                    alt={alt}
+                    width={650}
+                    height="auto"
+                    loading="lazy"
+                    decoding="async"
+                />
+            )}
+
             {title && (
                 <figcaption className="gatsby-resp-image-figcaption">
-                    {markdownToReact(title, markdownComponents)}
+                    <MarkdownToReact markdown={title} />
                 </figcaption>
             )}
         </figure>
+    )
+}
+
+const ImageScrollable = ({ src, alt, width, ...props }) => {
+    return (
+        <figure className={classNames(classes.standalone, classes.scrollable)}>
+            <img
+                className={classes['image-scrollable']}
+                {...imageSourceProps(src, width)}
+                alt={alt}
+                width={width}
+                height="auto"
+                loading="lazy"
+                decoding="async"
+            />
+        </figure>
+    )
+}
+
+const Standalone = ({ height, children, ...props }) => {
+    return (
+        <figure className={classes.standalone} style={{ height }}>
+            {children}
+        </figure>
+    )
+}
+
+const ImageFill = ({ image, ...props }) => {
+    // `next/image` runs with `unoptimized`, so it emits `src` verbatim — point it
+    // at the Image CDN to get a resized, format-negotiated version. Only `src` is
+    // set (no `srcSet`): next/image owns that attribute.
+    return (
+        <span
+            className={classes['figure-fill']}
+            style={{ paddingBottom: `${(image.height / image.width) * 100}%` }}
+        >
+            <ImageNext src={imageSourceProps(image.src, 1400).src} {...props} fill />
+        </span>
     )
 }
 
@@ -111,7 +190,7 @@ const GoogleSheet = ({ id, link, height, button = 'View full table' }) => {
             <iframe
                 title={id}
                 scrolling="no"
-                className={classes.googleSheet}
+                className={classes['google-sheet']}
                 height={height}
                 src={`https://docs.google.com/spreadsheets/d/e/${id}/pubhtml?widget=true&amp;headers=false`}
             />
@@ -124,4 +203,4 @@ const GoogleSheet = ({ id, link, height, button = 'View full table' }) => {
     )
 }
 
-export { YouTube, SoundCloud, Iframe, Image, GoogleSheet }
+export { YouTube, SoundCloud, Iframe, Image, ImageFill, ImageScrollable, GoogleSheet, Standalone }

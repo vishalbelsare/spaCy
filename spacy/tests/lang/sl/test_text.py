@@ -1,6 +1,3 @@
-import pytest
-
-
 def test_long_text(sl_tokenizer):
     # Excerpt: European Convention on Human Rights
     text = """
@@ -20,7 +17,6 @@ od katerih so te svoboščine odvisne,
     assert len(tokens) == 116
 
 
-@pytest.mark.xfail
 def test_ordinal_number(sl_tokenizer):
     text = "10. decembra 1948"
     tokens = sl_tokenizer(text)

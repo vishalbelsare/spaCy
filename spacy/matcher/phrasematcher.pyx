@@ -1,18 +1,18 @@
-# cython: infer_types=True, profile=True
-from libc.stdint cimport uintptr_t
-from preshed.maps cimport map_init, map_set, map_get, map_clear, map_iter
+# cython: infer_types=True
+from preshed.maps cimport map_clear, map_get, map_init, map_iter, map_set
 
 import warnings
 
-from ..attrs cimport ORTH, POS, TAG, DEP, LEMMA, MORPH
+from ..attrs cimport DEP, LEMMA, MORPH, POS, TAG
+
 from ..attrs import IDS
-from ..structs cimport TokenC
-from ..tokens.token cimport Token
+
 from ..tokens.span cimport Span
+from ..tokens.token cimport Token
 from ..typedefs cimport attr_t
 
-from ..schemas import TokenPattern
 from ..errors import Errors, Warnings
+from ..schemas import TokenPattern
 
 
 cdef class PhraseMatcher:
@@ -47,7 +47,7 @@ cdef class PhraseMatcher:
         self._terminal_hash = 826361138722620965
         map_init(self.mem, self.c_map, 8)
 
-        if isinstance(attr, (int, long)):
+        if isinstance(attr, int):
             self.attr = attr
         else:
             if attr is None:
@@ -57,7 +57,7 @@ cdef class PhraseMatcher:
                 attr = "ORTH"
             if attr == "IS_SENT_START":
                 attr = "SENT_START"
-            if attr.lower() not in TokenPattern().dict():
+            if attr.lower() not in TokenPattern().model_dump():
                 raise ValueError(Errors.E152.format(attr=attr))
             self.attr = IDS.get(attr)
 
@@ -118,6 +118,8 @@ cdef class PhraseMatcher:
                     # if token is not found, break out of the loop
                     current_node = NULL
                     break
+            path_nodes.push_back(current_node)
+            path_keys.push_back(self._terminal_hash)
             # remove the tokens from trie node if there are no other
             # keywords with them
             result = map_get(current_node, self._terminal_hash)

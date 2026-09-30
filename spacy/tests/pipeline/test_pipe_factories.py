@@ -1,14 +1,14 @@
 import pytest
+from pydantic import StrictInt, StrictStr
+from thinc.api import ConfigValidationError, Linear, Model
 
 import spacy
-from spacy.language import Language
-from spacy.lang.en import English
 from spacy.lang.de import German
+from spacy.lang.en import English
+from spacy.language import Language
 from spacy.pipeline.tok2vec import DEFAULT_TOK2VEC_MODEL
 from spacy.tokens import Doc
-from spacy.util import registry, SimpleFrozenDict, combine_score_weights
-from thinc.api import Model, Linear, ConfigValidationError
-from pydantic import StrictInt, StrictStr
+from spacy.util import SimpleFrozenDict, combine_score_weights, registry
 
 from ..util import make_tempdir
 
@@ -119,6 +119,7 @@ def test_pipe_class_component_config():
             self.value1 = value1
             self.value2 = value2
             self.is_base = True
+            self.name = name
 
         def __call__(self, doc: Doc) -> Doc:
             return doc
@@ -141,12 +142,16 @@ def test_pipe_class_component_config():
         nlp.add_pipe(name)
     with pytest.raises(ConfigValidationError):  # invalid config
         nlp.add_pipe(name, config={"value1": "10", "value2": "hello"})
-    nlp.add_pipe(name, config={"value1": 10, "value2": "hello"})
+    with pytest.warns(UserWarning):
+        nlp.add_pipe(
+            name, config={"value1": 10, "value2": "hello", "name": "wrong_name"}
+        )
     pipe = nlp.get_pipe(name)
     assert isinstance(pipe.nlp, Language)
     assert pipe.value1 == 10
     assert pipe.value2 == "hello"
     assert pipe.is_base is True
+    assert pipe.name == name
 
     nlp_en = English()
     with pytest.raises(ConfigValidationError):  # invalid config
@@ -193,7 +198,7 @@ def test_pipe_class_component_model():
             "@architectures": "spacy.TextCatEnsemble.v2",
             "tok2vec": DEFAULT_TOK2VEC_MODEL,
             "linear_model": {
-                "@architectures": "spacy.TextCatBOW.v2",
+                "@architectures": "spacy.TextCatBOW.v3",
                 "exclusive_classes": False,
                 "ngram_size": 1,
                 "no_output_layer": False,
@@ -269,20 +274,17 @@ def test_pipe_factories_wrong_formats():
     with pytest.raises(ValueError):
         # Decorator is not called
         @Language.component
-        def component(foo: int, bar: str):
-            ...
+        def component(foo: int, bar: str): ...
 
     with pytest.raises(ValueError):
         # Decorator is not called
         @Language.factory
-        def factory1(foo: int, bar: str):
-            ...
+        def factory1(foo: int, bar: str): ...
 
     with pytest.raises(ValueError):
         # Factory function is missing "nlp" and "name" arguments
         @Language.factory("test_pipe_factories_missing_args")
-        def factory2(foo: int, bar: str):
-            ...
+        def factory2(foo: int, bar: str): ...
 
 
 def test_pipe_factory_meta_config_cleanup():
@@ -319,8 +321,7 @@ def test_pipe_factories_empty_dict_default():
     name = "test_pipe_factories_empty_dict_default"
 
     @Language.factory(name, default_config={"foo": {}})
-    def factory(nlp: Language, name: str, foo: dict):
-        ...
+    def factory(nlp: Language, name: str, foo: dict): ...
 
     nlp = Language()
     nlp.create_pipe(name)
@@ -539,11 +540,9 @@ def test_pipe_factories_from_source_config():
 
 
 class PipeFactoriesIdempotent:
-    def __init__(self, nlp, name):
-        ...
+    def __init__(self, nlp, name): ...
 
-    def __call__(self, doc):
-        ...
+    def __call__(self, doc): ...
 
 
 @pytest.mark.parametrize(

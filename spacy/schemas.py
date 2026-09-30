@@ -1,16 +1,38 @@
-from typing import Dict, List, Union, Optional, Any, Callable, Type, Tuple
-from typing import Iterable, TypeVar, TYPE_CHECKING
-from .compat import Literal
-from enum import Enum
-from pydantic import BaseModel, Field, ValidationError, validator, create_model
-from pydantic import StrictStr, StrictInt, StrictFloat, StrictBool
-from pydantic.main import ModelMetaclass
-from thinc.api import Optimizer, ConfigValidationError, Model
-from thinc.config import Promise
-from collections import defaultdict
 import inspect
+from collections import defaultdict
+from enum import Enum
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
+
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictFloat,
+    StrictInt,
+    StrictStr,
+    ValidationError,
+    constr,
+    create_model,
+    field_validator,
+)
+from thinc.api import ConfigValidationError, Model, Optimizer
+from thinc.config import Promise
 
 from .attrs import NAMES
+from .compat import Literal
 from .lookups import Lookups
 from .util import is_cython_func
 
@@ -51,14 +73,9 @@ def validate(schema: Type[BaseModel], obj: Dict[str, Any]) -> List[str]:
 # Initialization
 
 
-class ArgSchemaConfig:
-    extra = "forbid"
-    arbitrary_types_allowed = True
+ArgSchemaConfig = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
-
-class ArgSchemaConfigExtra:
-    extra = "forbid"
-    arbitrary_types_allowed = True
+ArgSchemaConfigExtra = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
 
 def get_arg_model(
@@ -67,7 +84,7 @@ def get_arg_model(
     exclude: Iterable[str] = tuple(),
     name: str = "ArgModel",
     strict: bool = True,
-) -> ModelMetaclass:
+) -> type[BaseModel]:
     """Generate a pydantic model for function arguments.
 
     func (Callable): The function to generate the schema for.
@@ -75,7 +92,7 @@ def get_arg_model(
     name (str): Name of created model class.
     strict (bool): Don't allow extra arguments if no variable keyword arguments
         are allowed on the function.
-    RETURNS (ModelMetaclass): A pydantic model.
+    RETURNS (type[BaseModel]): A pydantic model.
     """
     sig_args = {}
     try:
@@ -104,7 +121,7 @@ def get_arg_model(
         sig_args[param.name] = (annotation, default)
     is_strict = strict and not has_variable
     sig_args["__config__"] = ArgSchemaConfig if is_strict else ArgSchemaConfigExtra  # type: ignore[assignment]
-    return create_model(name, **sig_args)  # type: ignore[arg-type, return-value]
+    return create_model(name, **sig_args)  # type: ignore[call-overload, arg-type, return-value]
 
 
 def validate_init_settings(
@@ -129,7 +146,7 @@ def validate_init_settings(
     """
     schema = get_arg_model(func, exclude=exclude, name="InitArgModel")
     try:
-        return schema(**settings).dict()
+        return schema.model_validate(settings).model_dump()
     except ValidationError as e:
         block = "initialize" if not section else f"initialize.{section}"
         title = f"Error validating initialization settings in [{block}]"
@@ -155,18 +172,45 @@ def validate_token_pattern(obj: list) -> List[str]:
 
 
 class TokenPatternString(BaseModel):
-    REGEX: Optional[StrictStr] = Field(None, alias="regex")
+    REGEX: Optional[Union[StrictStr, "TokenPatternString"]] = Field(None, alias="regex")
     IN: Optional[List[StrictStr]] = Field(None, alias="in")
     NOT_IN: Optional[List[StrictStr]] = Field(None, alias="not_in")
     IS_SUBSET: Optional[List[StrictStr]] = Field(None, alias="is_subset")
     IS_SUPERSET: Optional[List[StrictStr]] = Field(None, alias="is_superset")
     INTERSECTS: Optional[List[StrictStr]] = Field(None, alias="intersects")
+    FUZZY: Optional[Union[StrictStr, "TokenPatternString"]] = Field(None, alias="fuzzy")
+    FUZZY1: Optional[Union[StrictStr, "TokenPatternString"]] = Field(
+        None, alias="fuzzy1"
+    )
+    FUZZY2: Optional[Union[StrictStr, "TokenPatternString"]] = Field(
+        None, alias="fuzzy2"
+    )
+    FUZZY3: Optional[Union[StrictStr, "TokenPatternString"]] = Field(
+        None, alias="fuzzy3"
+    )
+    FUZZY4: Optional[Union[StrictStr, "TokenPatternString"]] = Field(
+        None, alias="fuzzy4"
+    )
+    FUZZY5: Optional[Union[StrictStr, "TokenPatternString"]] = Field(
+        None, alias="fuzzy5"
+    )
+    FUZZY6: Optional[Union[StrictStr, "TokenPatternString"]] = Field(
+        None, alias="fuzzy6"
+    )
+    FUZZY7: Optional[Union[StrictStr, "TokenPatternString"]] = Field(
+        None, alias="fuzzy7"
+    )
+    FUZZY8: Optional[Union[StrictStr, "TokenPatternString"]] = Field(
+        None, alias="fuzzy8"
+    )
+    FUZZY9: Optional[Union[StrictStr, "TokenPatternString"]] = Field(
+        None, alias="fuzzy9"
+    )
 
-    class Config:
-        extra = "forbid"
-        allow_population_by_field_name = True  # allow alias and field name
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    @validator("*", pre=True, each_item=True, allow_reuse=True)
+    @field_validator("*", mode="before")
+    @classmethod
     def raise_for_none(cls, v):
         if v is None:
             raise ValueError("None / null is not allowed")
@@ -180,31 +224,34 @@ class TokenPatternNumber(BaseModel):
     IS_SUBSET: Optional[List[StrictInt]] = Field(None, alias="is_subset")
     IS_SUPERSET: Optional[List[StrictInt]] = Field(None, alias="is_superset")
     INTERSECTS: Optional[List[StrictInt]] = Field(None, alias="intersects")
-    EQ: Union[StrictInt, StrictFloat] = Field(None, alias="==")
-    NEQ: Union[StrictInt, StrictFloat] = Field(None, alias="!=")
-    GEQ: Union[StrictInt, StrictFloat] = Field(None, alias=">=")
-    LEQ: Union[StrictInt, StrictFloat] = Field(None, alias="<=")
-    GT: Union[StrictInt, StrictFloat] = Field(None, alias=">")
-    LT: Union[StrictInt, StrictFloat] = Field(None, alias="<")
+    EQ: Optional[Union[StrictInt, StrictFloat]] = Field(None, alias="==")
+    NEQ: Optional[Union[StrictInt, StrictFloat]] = Field(None, alias="!=")
+    GEQ: Optional[Union[StrictInt, StrictFloat]] = Field(None, alias=">=")
+    LEQ: Optional[Union[StrictInt, StrictFloat]] = Field(None, alias="<=")
+    GT: Optional[Union[StrictInt, StrictFloat]] = Field(None, alias=">")
+    LT: Optional[Union[StrictInt, StrictFloat]] = Field(None, alias="<")
 
-    class Config:
-        extra = "forbid"
-        allow_population_by_field_name = True  # allow alias and field name
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    @validator("*", pre=True, each_item=True, allow_reuse=True)
+    @field_validator("*", mode="before")
+    @classmethod
     def raise_for_none(cls, v):
         if v is None:
             raise ValueError("None / null is not allowed")
         return v
 
 
-class TokenPatternOperator(str, Enum):
-    plus: StrictStr = StrictStr("+")
-    start: StrictStr = StrictStr("*")
-    question: StrictStr = StrictStr("?")
-    exclamation: StrictStr = StrictStr("!")
+class TokenPatternOperatorSimple(str, Enum):
+    plus = StrictStr("+")
+    star = StrictStr("*")
+    question = StrictStr("?")
+    exclamation = StrictStr("!")
 
 
+TokenPatternOperatorMinMax = constr(pattern=r"^(\{\d+\}|\{\d+,\d*\}|\{\d*,\d+\})$")
+
+
+TokenPatternOperator = Union[TokenPatternOperatorSimple, TokenPatternOperatorMinMax]  # type: ignore[valid-type]
 StringValue = Union[TokenPatternString, StrictStr]
 NumberValue = Union[TokenPatternNumber, StrictInt, StrictFloat]
 UnderscoreValue = Union[
@@ -252,12 +299,14 @@ class TokenPattern(BaseModel):
     op: Optional[TokenPatternOperator] = None
     underscore: Optional[Dict[StrictStr, UnderscoreValue]] = Field(None, alias="_")
 
-    class Config:
-        extra = "forbid"
-        allow_population_by_field_name = True
-        alias_generator = lambda value: value.upper()
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+        alias_generator=lambda value: value.upper(),
+    )
 
-    @validator("*", pre=True, allow_reuse=True)
+    @field_validator("*", mode="before")
+    @classmethod
     def raise_for_none(cls, v):
         if v is None:
             raise ValueError("None / null is not allowed")
@@ -265,10 +314,9 @@ class TokenPattern(BaseModel):
 
 
 class TokenPatternSchema(BaseModel):
-    pattern: List[TokenPattern] = Field(..., min_items=1)
+    pattern: List[TokenPattern] = Field(..., min_length=1)
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 # Model meta
@@ -323,11 +371,10 @@ class ConfigSchemaTraining(BaseModel):
     frozen_components: List[str] = Field(..., title="Pipeline components that shouldn't be updated during training")
     annotating_components: List[str] = Field(..., title="Pipeline components that should set annotations during training")
     before_to_disk: Optional[Callable[["Language"], "Language"]] = Field(..., title="Optional callback to modify nlp object after training, before it's saved to disk")
+    before_update: Optional[Callable[["Language", Dict[str, Any]], None]] = Field(..., title="Optional callback that is invoked at the start of each training step")
     # fmt: on
 
-    class Config:
-        extra = "forbid"
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
 
 class ConfigSchemaNlp(BaseModel):
@@ -340,16 +387,14 @@ class ConfigSchemaNlp(BaseModel):
     after_creation: Optional[Callable[["Language"], "Language"]] = Field(..., title="Optional callback to modify nlp object after creation and before the pipeline is constructed")
     after_pipeline_creation: Optional[Callable[["Language"], "Language"]] = Field(..., title="Optional callback to modify nlp object after the pipeline is constructed")
     batch_size: Optional[int] = Field(..., title="Default batch size")
+    vectors: Callable = Field(..., title="Vectors implementation")
     # fmt: on
 
-    class Config:
-        extra = "forbid"
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
 
 class ConfigSchemaPretrainEmpty(BaseModel):
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class ConfigSchemaPretrain(BaseModel):
@@ -366,9 +411,7 @@ class ConfigSchemaPretrain(BaseModel):
     objective: Callable[["Vocab", Model], Model] = Field(..., title="A function that creates the pretraining objective.")
     # fmt: on
 
-    class Config:
-        extra = "forbid"
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
 
 class ConfigSchemaInit(BaseModel):
@@ -377,15 +420,13 @@ class ConfigSchemaInit(BaseModel):
     lookups: Optional[Lookups] = Field(..., title="Vocabulary lookups, e.g. lexeme normalization")
     vectors: Optional[StrictStr] = Field(..., title="Path to vectors")
     init_tok2vec: Optional[StrictStr] = Field(..., title="Path to pretrained tok2vec weights")
-    tokenizer: Dict[StrictStr, Any] = Field(..., help="Arguments to be passed into Tokenizer.initialize")
-    components: Dict[StrictStr, Dict[StrictStr, Any]] = Field(..., help="Arguments for TrainablePipe.initialize methods of pipeline components, keyed by component")
+    tokenizer: Dict[StrictStr, Any] = Field(..., title="Arguments to be passed into Tokenizer.initialize")
+    components: Dict[StrictStr, Dict[StrictStr, Any]] = Field(..., title="Arguments for TrainablePipe.initialize methods of pipeline components, keyed by component")
     before_init: Optional[Callable[["Language"], "Language"]] = Field(..., title="Optional callback to modify nlp object before initialization")
     after_init: Optional[Callable[["Language"], "Language"]] = Field(..., title="Optional callback to modify nlp object after initialization")
     # fmt: on
 
-    class Config:
-        extra = "forbid"
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
 
 class ConfigSchema(BaseModel):
@@ -396,9 +437,7 @@ class ConfigSchema(BaseModel):
     corpora: Dict[str, Reader]
     initialize: ConfigSchemaInit
 
-    class Config:
-        extra = "allow"
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
 
 CONFIG_SCHEMAS = {
@@ -407,66 +446,6 @@ CONFIG_SCHEMAS = {
     "pretraining": ConfigSchemaPretrain,
     "initialize": ConfigSchemaInit,
 }
-
-
-# Project config Schema
-
-
-class ProjectConfigAssetGitItem(BaseModel):
-    # fmt: off
-    repo: StrictStr = Field(..., title="URL of Git repo to download from")
-    path: StrictStr = Field(..., title="File path or sub-directory to download (used for sparse checkout)")
-    branch: StrictStr = Field("master", title="Branch to clone from")
-    # fmt: on
-
-
-class ProjectConfigAssetURL(BaseModel):
-    # fmt: off
-    dest: StrictStr = Field(..., title="Destination of downloaded asset")
-    url: Optional[StrictStr] = Field(None, title="URL of asset")
-    checksum: str = Field(None, title="MD5 hash of file", regex=r"([a-fA-F\d]{32})")
-    description: StrictStr = Field("", title="Description of asset")
-    # fmt: on
-
-
-class ProjectConfigAssetGit(BaseModel):
-    # fmt: off
-    git: ProjectConfigAssetGitItem = Field(..., title="Git repo information")
-    checksum: str = Field(None, title="MD5 hash of file", regex=r"([a-fA-F\d]{32})")
-    description: Optional[StrictStr] = Field(None, title="Description of asset")
-    # fmt: on
-
-
-class ProjectConfigCommand(BaseModel):
-    # fmt: off
-    name: StrictStr = Field(..., title="Name of command")
-    help: Optional[StrictStr] = Field(None, title="Command description")
-    script: List[StrictStr] = Field([], title="List of CLI commands to run, in order")
-    deps: List[StrictStr] = Field([], title="File dependencies required by this command")
-    outputs: List[StrictStr] = Field([], title="Outputs produced by this command")
-    outputs_no_cache: List[StrictStr] = Field([], title="Outputs not tracked by DVC (DVC only)")
-    no_skip: bool = Field(False, title="Never skip this command, even if nothing changed")
-    # fmt: on
-
-    class Config:
-        title = "A single named command specified in a project config"
-        extra = "forbid"
-
-
-class ProjectConfigSchema(BaseModel):
-    # fmt: off
-    vars: Dict[StrictStr, Any] = Field({}, title="Optional variables to substitute in commands")
-    env: Dict[StrictStr, Any] = Field({}, title="Optional variable names to substitute in commands, mapped to environment variable names")
-    assets: List[Union[ProjectConfigAssetURL, ProjectConfigAssetGit]] = Field([], title="Data assets")
-    workflows: Dict[StrictStr, List[StrictStr]] = Field({}, title="Named workflows, mapped to list of project commands to run in order")
-    commands: List[ProjectConfigCommand] = Field([], title="Project command shortucts")
-    title: Optional[str] = Field(None, title="Project title")
-    spacy_version: Optional[StrictStr] = Field(None, title="spaCy version range that the project is compatible with")
-    # fmt: on
-
-    class Config:
-        title = "Schema for project configuration file"
-
 
 # Recommendations for init config workflows
 
@@ -485,3 +464,37 @@ class RecommendationSchema(BaseModel):
     word_vectors: Optional[str] = None
     transformer: Optional[RecommendationTrf] = None
     has_letters: bool = True
+
+
+class DocJSONSchema(BaseModel):
+    """
+    JSON/dict format for JSON representation of Doc objects.
+    """
+
+    cats: Optional[Dict[StrictStr, StrictFloat]] = Field(
+        None, title="Categories with corresponding probabilities"
+    )
+    ents: Optional[List[Dict[StrictStr, Union[StrictInt, StrictStr]]]] = Field(
+        None, title="Information on entities"
+    )
+    sents: Optional[List[Dict[StrictStr, StrictInt]]] = Field(
+        None, title="Indices of sentences' start and end indices"
+    )
+    text: StrictStr = Field(..., title="Document text")
+    spans: Optional[
+        Dict[StrictStr, List[Dict[StrictStr, Union[StrictStr, StrictInt]]]]
+    ] = Field(None, title="Span information - end/start indices, label, KB ID")
+    tokens: List[Dict[StrictStr, Union[StrictStr, StrictInt]]] = Field(
+        ..., title="Token information - ID, start, annotations"
+    )
+    underscore_doc: Optional[Dict[StrictStr, Any]] = Field(
+        None,
+        title="Any custom data stored in the document's _ attribute",
+        alias="_",
+    )
+    underscore_token: Optional[Dict[StrictStr, List[Dict[StrictStr, Any]]]] = Field(
+        None, title="Any custom data stored in the token's _ attribute"
+    )
+    underscore_span: Optional[Dict[StrictStr, List[Dict[StrictStr, Any]]]] = Field(
+        None, title="Any custom data stored in the span's _ attribute"
+    )

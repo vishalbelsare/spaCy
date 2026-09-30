@@ -1,13 +1,20 @@
-from typing import Optional
-from pathlib import Path
-from wasabi import msg
-import typer
 import logging
+from pathlib import Path
+from typing import Optional
 
-from ._util import app, Arg, Opt, parse_config_overrides, show_validation_error
-from ._util import import_code
+import typer
+from wasabi import msg
+
 from .. import util
 from ..util import get_sourced_components, load_model_from_config
+from ._util import (
+    Arg,
+    Opt,
+    app,
+    import_code,
+    parse_config_overrides,
+    show_validation_error,
+)
 
 
 @app.command(
@@ -17,10 +24,25 @@ from ..util import get_sourced_components, load_model_from_config
 def assemble_cli(
     # fmt: off
     ctx: typer.Context,  # This is only used to read additional arguments
-    config_path: Path = Arg(..., help="Path to config file", exists=True, allow_dash=True),
-    output_path: Path = Arg(..., help="Output directory to store assembled pipeline in"),
-    code_path: Optional[Path] = Opt(None, "--code", "-c", help="Path to Python file with additional code (registered functions) to be imported"),
-    verbose: bool = Opt(False, "--verbose", "-V", "-VV", help="Display more information for debugging purposes"),
+    config_path: Path = Arg(
+        ..., help="Path to config file", exists=True, allow_dash=True
+    ),
+    output_path: Path = Arg(
+        ..., help="Output directory to store assembled pipeline in"
+    ),
+    code_path: Optional[Path] = Opt(
+        None,
+        "--code",
+        "-c",
+        help="Path to Python file with additional code (registered functions) to be imported",
+    ),
+    verbose: bool = Opt(
+        False,
+        "--verbose",
+        "-V",
+        "-VV",
+        help="Display more information for debugging purposes",
+    ),
     # fmt: on
 ):
     """
@@ -33,7 +55,8 @@ def assemble_cli(
 
     DOCS: https://spacy.io/api/cli#assemble
     """
-    util.logger.setLevel(logging.DEBUG if verbose else logging.INFO)
+    if verbose:
+        util.logger.setLevel(logging.DEBUG)
     # Make sure all files and paths exists if they are needed
     if not config_path or (str(config_path) != "-" and not config_path.exists()):
         msg.fail("Config file not found", config_path, exits=1)

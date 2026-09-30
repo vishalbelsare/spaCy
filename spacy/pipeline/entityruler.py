@@ -1,66 +1,29 @@
+import importlib
 import warnings
-from typing import Optional, Union, List, Dict, Tuple, Iterable, Any, Callable, Sequence
-from typing import cast
 from collections import defaultdict
 from pathlib import Path
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+
 import srsly
 
-from .pipe import Pipe
-from ..training import Example
-from ..language import Language
 from ..errors import Errors, Warnings
-from ..util import ensure_path, to_disk, from_disk, SimpleFrozenList, registry
-from ..tokens import Doc, Span
+from ..language import Language
 from ..matcher import Matcher, PhraseMatcher
+from ..matcher.levenshtein import levenshtein_compare
 from ..scorer import get_ner_prf
-
+from ..tokens import Doc, Span
+from ..training import Example
+from ..util import SimpleFrozenList, ensure_path, from_disk, to_disk
+from .pipe import Pipe
 
 DEFAULT_ENT_ID_SEP = "||"
 PatternType = Dict[str, Union[str, List[Dict[str, Any]]]]
-
-
-@Language.factory(
-    "entity_ruler",
-    assigns=["doc.ents", "token.ent_type", "token.ent_iob"],
-    default_config={
-        "phrase_matcher_attr": None,
-        "validate": False,
-        "overwrite_ents": False,
-        "ent_id_sep": DEFAULT_ENT_ID_SEP,
-        "scorer": {"@scorers": "spacy.entity_ruler_scorer.v1"},
-    },
-    default_score_weights={
-        "ents_f": 1.0,
-        "ents_p": 0.0,
-        "ents_r": 0.0,
-        "ents_per_type": None,
-    },
-)
-def make_entity_ruler(
-    nlp: Language,
-    name: str,
-    phrase_matcher_attr: Optional[Union[int, str]],
-    validate: bool,
-    overwrite_ents: bool,
-    ent_id_sep: str,
-    scorer: Optional[Callable],
-):
-    return EntityRuler(
-        nlp,
-        name,
-        phrase_matcher_attr=phrase_matcher_attr,
-        validate=validate,
-        overwrite_ents=overwrite_ents,
-        ent_id_sep=ent_id_sep,
-        scorer=scorer,
-    )
 
 
 def entity_ruler_score(examples, **kwargs):
     return get_ner_prf(examples)
 
 
-@registry.scorers("spacy.entity_ruler_scorer.v1")
 def make_entity_ruler_scorer():
     return entity_ruler_score
 
@@ -82,6 +45,7 @@ class EntityRuler(Pipe):
         name: str = "entity_ruler",
         *,
         phrase_matcher_attr: Optional[Union[int, str]] = None,
+        matcher_fuzzy_compare: Callable = levenshtein_compare,
         validate: bool = False,
         overwrite_ents: bool = False,
         ent_id_sep: str = DEFAULT_ENT_ID_SEP,
@@ -100,7 +64,10 @@ class EntityRuler(Pipe):
             added. Used to disable the current entity ruler while creating
             phrase patterns with the nlp object.
         phrase_matcher_attr (int / str): Token attribute to match on, passed
-            to the internal PhraseMatcher as `attr`
+            to the internal PhraseMatcher as `attr`.
+        matcher_fuzzy_compare (Callable): The fuzzy comparison method for the
+            internal Matcher. Defaults to
+            spacy.matcher.levenshtein.levenshtein_compare.
         validate (bool): Whether patterns should be validated, passed to
             Matcher and PhraseMatcher as `validate`
         patterns (iterable): Optional patterns to load in.
@@ -118,7 +85,10 @@ class EntityRuler(Pipe):
         self.token_patterns = defaultdict(list)  # type: ignore
         self.phrase_patterns = defaultdict(list)  # type: ignore
         self._validate = validate
-        self.matcher = Matcher(nlp.vocab, validate=validate)
+        self.matcher_fuzzy_compare = matcher_fuzzy_compare
+        self.matcher = Matcher(
+            nlp.vocab, validate=validate, fuzzy_compare=self.matcher_fuzzy_compare
+        )
         self.phrase_matcher_attr = phrase_matcher_attr
         self.phrase_matcher = PhraseMatcher(
             nlp.vocab, attr=self.phrase_matcher_attr, validate=validate
@@ -159,10 +129,8 @@ class EntityRuler(Pipe):
         self._require_patterns()
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="\\[W036")
-            matches = cast(
-                List[Tuple[int, int, int]],
-                list(self.matcher(doc)) + list(self.phrase_matcher(doc)),
-            )
+            matches = list(self.matcher(doc)) + list(self.phrase_matcher(doc))
+
         final_matches = set(
             [(m_id, start, end) for m_id, start, end in matches if start != end]
         )
@@ -182,10 +150,7 @@ class EntityRuler(Pipe):
             if start not in seen_tokens and end - 1 not in seen_tokens:
                 if match_id in self._ent_ids:
                     label, ent_id = self._ent_ids[match_id]
-                    span = Span(doc, start, end, label=label)
-                    if ent_id:
-                        for token in span:
-                            token.ent_id_ = ent_id
+                    span = Span(doc, start, end, label=label, span_id=ent_id)
                 else:
                     span = Span(doc, start, end, label=match_id)
                 new_entities.append(span)
@@ -322,7 +287,7 @@ class EntityRuler(Pipe):
                     phrase_pattern["id"] = ent_id
                 phrase_patterns.append(phrase_pattern)
             for entry in token_patterns + phrase_patterns:  # type: ignore[operator]
-                label = entry["label"]
+                label = entry["label"]  # type: ignore
                 if "id" in entry:
                     ent_label = label
                     label = self._create_label(label, entry["id"])
@@ -343,7 +308,11 @@ class EntityRuler(Pipe):
         self.token_patterns = defaultdict(list)
         self.phrase_patterns = defaultdict(list)
         self._ent_ids = defaultdict(tuple)
-        self.matcher = Matcher(self.nlp.vocab, validate=self._validate)
+        self.matcher = Matcher(
+            self.nlp.vocab,
+            validate=self._validate,
+            fuzzy_compare=self.matcher_fuzzy_compare,
+        )
         self.phrase_matcher = PhraseMatcher(
             self.nlp.vocab, attr=self.phrase_matcher_attr, validate=self._validate
         )
@@ -359,7 +328,9 @@ class EntityRuler(Pipe):
             (label, eid) for (label, eid) in self._ent_ids.values() if eid == ent_id
         ]
         if not label_id_pairs:
-            raise ValueError(Errors.E1024.format(ent_id=ent_id))
+            raise ValueError(
+                Errors.E1024.format(attr_type="ID", label=ent_id, component=self.name)
+            )
         created_labels = [
             self._create_label(label, eid) for (label, eid) in label_id_pairs
         ]
@@ -435,7 +406,8 @@ class EntityRuler(Pipe):
             self.overwrite = cfg.get("overwrite", False)
             self.phrase_matcher_attr = cfg.get("phrase_matcher_attr", None)
             self.phrase_matcher = PhraseMatcher(
-                self.nlp.vocab, attr=self.phrase_matcher_attr
+                self.nlp.vocab,
+                attr=self.phrase_matcher_attr,
             )
             self.ent_id_sep = cfg.get("ent_id_sep", DEFAULT_ENT_ID_SEP)
         else:
@@ -527,3 +499,11 @@ class EntityRuler(Pipe):
             srsly.write_jsonl(path, self.patterns)
         else:
             to_disk(path, serializers, {})
+
+
+# Setup backwards compatibility hook for factories
+def __getattr__(name):
+    if name == "make_entity_ruler":
+        module = importlib.import_module("spacy.pipeline.factories")
+        return module.make_entity_ruler
+    raise AttributeError(f"module {__name__} has no attribute {name}")

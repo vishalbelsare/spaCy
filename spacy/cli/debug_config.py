@@ -1,15 +1,22 @@
-from typing import Optional, Dict, Any, Union, List
 from pathlib import Path
-from wasabi import msg, table
+from typing import Any, Dict, List, Optional, Union
+
+import typer
 from thinc.api import Config
 from thinc.config import VARIABLE_RE
-import typer
+from wasabi import msg, table
 
-from ._util import Arg, Opt, show_validation_error, parse_config_overrides
-from ._util import import_code, debug_cli
+from .. import util
 from ..schemas import ConfigSchemaInit, ConfigSchemaTraining
 from ..util import registry
-from .. import util
+from ._util import (
+    Arg,
+    Opt,
+    debug_cli,
+    import_code,
+    parse_config_overrides,
+    show_validation_error,
+)
 
 
 @debug_cli.command(
@@ -19,10 +26,28 @@ from .. import util
 def debug_config_cli(
     # fmt: off
     ctx: typer.Context,  # This is only used to read additional arguments
-    config_path: Path = Arg(..., help="Path to config file", exists=True, allow_dash=True),
-    code_path: Optional[Path] = Opt(None, "--code-path", "--code", "-c", help="Path to Python file with additional code (registered functions) to be imported"),
-    show_funcs: bool = Opt(False, "--show-functions", "-F", help="Show an overview of all registered functions used in the config and where they come from (modules, files etc.)"),
-    show_vars: bool = Opt(False, "--show-variables", "-V", help="Show an overview of all variables referenced in the config and their values. This will also reflect variables overwritten on the CLI.")
+    config_path: Path = Arg(
+        ..., help="Path to config file", exists=True, allow_dash=True
+    ),
+    code_path: Optional[Path] = Opt(
+        None,
+        "--code-path",
+        "--code",
+        "-c",
+        help="Path to Python file with additional code (registered functions) to be imported",
+    ),
+    show_funcs: bool = Opt(
+        False,
+        "--show-functions",
+        "-F",
+        help="Show an overview of all registered functions used in the config and where they come from (modules, files etc.)",
+    ),
+    show_vars: bool = Opt(
+        False,
+        "--show-variables",
+        "-V",
+        help="Show an overview of all variables referenced in the config and their values. This will also reflect variables overwritten on the CLI.",
+    ),
     # fmt: on
 ):
     """Debug a config file and show validation errors. The command will
@@ -57,10 +82,10 @@ def debug_config(
         config = nlp.config.interpolate()
     msg.divider("Config validation for [initialize]")
     with show_validation_error(config_path):
-        T = registry.resolve(config["initialize"], schema=ConfigSchemaInit)
+        T = registry.resolve(config["initialize"], schema=ConfigSchemaInit)  # type: ignore[arg-type]
     msg.divider("Config validation for [training]")
     with show_validation_error(config_path):
-        T = registry.resolve(config["training"], schema=ConfigSchemaTraining)
+        T = registry.resolve(config["training"], schema=ConfigSchemaTraining)  # type: ignore[arg-type]
         dot_names = [T["train_corpus"], T["dev_corpus"]]
         util.resolve_dot_names(config, dot_names)
     msg.good("Config is valid")
